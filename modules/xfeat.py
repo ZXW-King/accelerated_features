@@ -10,7 +10,7 @@ import torch
 import torch.nn.functional as F
 
 import tqdm
-
+import cv2
 from modules.model import *
 from modules.interpolator import InterpolateSparse2d
 
@@ -73,7 +73,6 @@ class XFeat(nn.Module):
 		mkpts_y  = torch.gather(mkpts[...,1], -1, idxs)[:, :top_k]
 		mkpts = torch.cat([mkpts_x[...,None], mkpts_y[...,None]], dim=-1)
 		scores = torch.gather(scores, -1, idxs)[:, :top_k]
-
 		#Interpolate descriptors at kpts positions
 		feats = self.interpolator(M1, mkpts, H = _H1, W = _W1)
 
@@ -114,6 +113,19 @@ class XFeat(nn.Module):
 		return {'keypoints': mkpts,
 				'descriptors': feats,
 				'scales': sc }
+
+	@torch.inference_mode()
+	def match_xfeat_BFMatcher(self,img1, img2,top_k=4096):
+		img1 = self.parse_input(img1)
+		img2 = self.parse_input(img2)
+
+		out1 = self.detectAndCompute(img1, top_k=top_k)[0]
+		out2 = self.detectAndCompute(img2, top_k=top_k)[0]
+		desc1,pts1,scores1 = out1['descriptors'].cpu().numpy(),out1['keypoints'].cpu().numpy(),out1['scores'].cpu().numpy()
+		desc2,pts2,scores2 = out2['descriptors'].cpu().numpy(),out2['keypoints'].cpu().numpy(),out2['scores'].cpu().numpy()
+		cvBFSpp = cv2.BFMatcher(cv2.NORM_L2, crossCheck=True)
+		matches = cvBFSpp.match(desc1, desc2)
+		return matches,pts1,pts2
 
 	@torch.inference_mode()
 	def match_xfeat(self, img1, img2, top_k = None, min_cossim = -1):
